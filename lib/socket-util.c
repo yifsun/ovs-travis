@@ -48,11 +48,18 @@
 #include "netlink-protocol.h"
 #include "netlink-socket.h"
 #endif
+#include "dns-resolve.h"
 
 VLOG_DEFINE_THIS_MODULE(socket_util);
 
 static int getsockopt_int(int fd, int level, int option, const char *optname,
                           int *valuep);
+static bool
+parse_sockaddr_components(struct sockaddr_storage *ss,
+                          char *host_s,
+                          const char *port_s, uint16_t default_port,
+                          const char *s,
+                          bool resolve_host);
 
 /* Sets 'fd' to non-blocking mode.  Returns 0 if successful, otherwise a
  * positive errno value. */
@@ -367,10 +374,30 @@ inet_parse_token(char **pp)
 }
 
 static bool
+parse_sockaddr_components_dns(struct sockaddr_storage *ss OVS_UNUSED,
+                              char *host_s,
+                              const char *port_s OVS_UNUSED,
+                              uint16_t default_port OVS_UNUSED,
+                              const char *s OVS_UNUSED)
+{
+    char *tmp_host_s;
+
+    dns_resolve(host_s, &tmp_host_s);
+    if (tmp_host_s != NULL) {
+        parse_sockaddr_components(ss, tmp_host_s, port_s,
+                                  default_port, s, false);
+        free(tmp_host_s);
+        return true;
+    }
+    return false;
+}
+
+static bool
 parse_sockaddr_components(struct sockaddr_storage *ss,
                           char *host_s,
                           const char *port_s, uint16_t default_port,
-                          const char *s)
+                          const char *s,
+                          bool resolve_host)
 {
     struct sockaddr_in *sin = ALIGNED_CAST(struct sockaddr_in *, ss);
     int port;
@@ -394,8 +421,7 @@ parse_sockaddr_components(struct sockaddr_storage *ss,
         sin6->sin6_family = AF_INET6;
         sin6->sin6_port = htons(port);
         if (!addr || !*addr || !ipv6_parse(addr, &sin6->sin6_addr)) {
-            VLOG_ERR("%s: bad IPv6 address \"%s\"", s, addr ? addr : "");
-            goto exit;
+            goto resolve;
         }
 
 #ifdef HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID
@@ -408,7 +434,7 @@ parse_sockaddr_components(struct sockaddr_storage *ss,
                 if (!sin6->sin6_scope_id) {
                     VLOG_ERR("%s: bad IPv6 scope \"%s\" (%s)",
                              s, scope, ovs_strerror(errno));
-                    goto exit;
+                    goto resolve;
                 }
             }
         }
@@ -417,13 +443,19 @@ parse_sockaddr_components(struct sockaddr_storage *ss,
         sin->sin_family = AF_INET;
         sin->sin_port = htons(port);
         if (host_s && !ip_parse(host_s, &sin->sin_addr.s_addr)) {
-            VLOG_ERR("%s: bad IPv4 address \"%s\"", s, host_s);
-            goto exit;
+            goto resolve;
         }
     }
 
     return true;
 
+resolve:
+    if (resolve_host && parse_sockaddr_components_dns(ss, host_s, port_s,
+                                                      default_port, s)) {
+        return true;
+    } else if (!resolve_host) {
+        VLOG_ERR("%s: bad IP address \"%s\"", s, host_s);
+    }
 exit:
     memset(ss, 0, sizeof *ss);
     return false;
@@ -456,7 +488,8 @@ inet_parse_active(const char *target_, uint16_t default_port,
         VLOG_ERR("%s: port must be specified", target_);
         ok = false;
     } else {
-        ok = parse_sockaddr_components(ss, host, port, default_port, target_);
+        ok = parse_sockaddr_components(ss, host, port, default_port,
+                                       target_, true);
     }
     if (!ok) {
         memset(ss, 0, sizeof *ss);
@@ -580,7 +613,8 @@ inet_parse_passive(const char *target_, int default_port,
         VLOG_ERR("%s: port must be specified", target_);
         ok = false;
     } else {
-        ok = parse_sockaddr_components(ss, host, port, default_port, target_);
+        ok = parse_sockaddr_components(ss, host, port, default_port,
+                                       target_, true);
     }
     if (!ok) {
         memset(ss, 0, sizeof *ss);

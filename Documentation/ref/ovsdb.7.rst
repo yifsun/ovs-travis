@@ -232,11 +232,11 @@ the opposite arrangement as well.
 
 OVSDB supports the following active connection methods:
 
-ssl:<ip>:<port>
-    The specified SSL or TLS <port> on the host at the given <ip>.
+ssl:<host>:<port>
+    The specified SSL or TLS <port> on the given <host>.
 
-tcp:<ip>:<port>
-    The specified TCP <port> on the host at the given <ip>.
+tcp:<host>:<port>
+    The specified TCP <port> on the given <host>.
 
 unix:<file>
     On Unix-like systems, connect to the Unix domain server socket named
@@ -247,15 +247,15 @@ unix:<file>
 
 OVSDB supports the following passive connection methods:
 
-pssl:<port>[:<ip>]
+pssl:<port>[:<host>]
     Listen on the given TCP <port> for SSL or TLS connections.  By default,
     connections are not bound to a particular local IP address.  Specifying
-    <ip> limits connections to those from the given IP.
+    <host> limits connections to those from the <host> IP.
 
-ptcp:<port>[:<ip>]
+ptcp:<port>[:<host>]
     Listen on the given TCP <port>.  By default, connections are not bound to a
-    particular local IP address.  Specifying <ip> limits connections to those
-    from the given IP.
+    particular local IP address.  Specifying <host> limits connections to those
+    from the <host> IP.
 
 punix:<file>
     On Unix-like systems, listens for connections on the Unix domain socket
@@ -268,7 +268,7 @@ All IP-based connection methods accept IPv4 and IPv6 addresses.  To specify an
 IPv6 address, wrap it in square brackets, e.g.  ``ssl:[::1]:6640``.  Passive
 IP-based connection methods by default listen for IPv4 connections only; use
 ``[::]`` as the address to accept both IPv4 and IPv6 connections,
-e.g. ``pssl:6640:[::]``.  DNS names are not accepted.  On Linux, use
+e.g. ``pssl:6640:[::]``.  DNS names are also accepted.  On Linux, use
 ``%<device>`` to designate a scope for IPv6 link-level addresses,
 e.g. ``ssl:[fe80::1234%eth0]:6653``.
 
