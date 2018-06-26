@@ -126,11 +126,11 @@ stream_usage(const char *name, bool active, bool passive,
     printf("\n");
     if (active) {
         printf("Active %s connection methods:\n", name);
-        printf("  tcp:IP:PORT             "
-               "PORT at remote IP\n");
+        printf("  tcp:HOST:PORT             "
+               "PORT at remote HOST\n");
 #ifdef HAVE_OPENSSL
-        printf("  ssl:IP:PORT             "
-               "SSL PORT at remote IP\n");
+        printf("  ssl:HOST:PORT             "
+               "SSL PORT at remote HOST\n");
 #endif
         printf("  unix:FILE               "
                "Unix domain socket named FILE\n");
@@ -138,11 +138,11 @@ stream_usage(const char *name, bool active, bool passive,
 
     if (passive) {
         printf("Passive %s connection methods:\n", name);
-        printf("  ptcp:PORT[:IP]          "
-               "listen to TCP PORT on IP\n");
+        printf("  ptcp:PORT[:HOST]          "
+               "listen to TCP PORT on HOST\n");
 #ifdef HAVE_OPENSSL
-        printf("  pssl:PORT[:IP]          "
-               "listen for SSL on PORT on IP\n");
+        printf("  pssl:PORT[:HOST]          "
+               "listen for SSL on PORT on HOST\n");
 #endif
         printf("  punix:FILE              "
                "listen on Unix domain socket FILE\n");
