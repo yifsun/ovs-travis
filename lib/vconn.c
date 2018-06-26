@@ -139,23 +139,23 @@ vconn_usage(bool active, bool passive, bool bootstrap OVS_UNUSED)
     printf("\n");
     if (active) {
         printf("Active OpenFlow connection methods:\n");
-        printf("  tcp:IP[:PORT]           "
-               "PORT (default: %d) at remote IP\n", OFP_PORT);
+        printf("  tcp:HOST[:PORT]           "
+               "PORT (default: %d) at remote HOST\n", OFP_PORT);
 #ifdef HAVE_OPENSSL
-        printf("  ssl:IP[:PORT]           "
-               "SSL PORT (default: %d) at remote IP\n", OFP_PORT);
+        printf("  ssl:HOST[:PORT]           "
+               "SSL PORT (default: %d) at remote HOST\n", OFP_PORT);
 #endif
         printf("  unix:FILE               Unix domain socket named FILE\n");
     }
 
     if (passive) {
         printf("Passive OpenFlow connection methods:\n");
-        printf("  ptcp:[PORT][:IP]        "
-               "listen to TCP PORT (default: %d) on IP\n",
+        printf("  ptcp:[PORT][:HOST]        "
+               "listen to TCP PORT (default: %d) on HOST\n",
                OFP_PORT);
 #ifdef HAVE_OPENSSL
-        printf("  pssl:[PORT][:IP]        "
-               "listen for SSL on PORT (default: %d) on IP\n",
+        printf("  pssl:[PORT][:HOST]        "
+               "listen for SSL on PORT (default: %d) on HOST\n",
                OFP_PORT);
 #endif
         printf("  punix:FILE              "
