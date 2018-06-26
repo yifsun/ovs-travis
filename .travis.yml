@@ -20,6 +20,7 @@ addons:
       - libelf-dev
       - selinux-policy-dev
       - libunbound-dev
+      - libunbound-dev:i386
 
 before_install: ./.travis/${TRAVIS_OS_NAME}-prepare.sh
 
