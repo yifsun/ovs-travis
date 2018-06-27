@@ -1,17 +1,11 @@
 #ifndef __NET_DST_METADATA_WRAPPER_H
 #define __NET_DST_METADATA_WRAPPER_H 1
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
-enum metadata_type {
-	METADATA_IP_TUNNEL,
-	METADATA_HW_PORT_MUX,
-};
-#endif
-
 #ifdef USE_UPSTREAM_TUNNEL
 #include_next <net/dst_metadata.h>
 #else
 #include <linux/skbuff.h>
+
 #include <net/dsfield.h>
 #include <net/dst.h>
 #include <net/ipv6.h>
@@ -117,15 +111,25 @@ static inline void ovs_ipv6_tun_rx_dst(struct metadata_dst *md_dst,
 void ovs_ip_tunnel_rcv(struct net_device *dev, struct sk_buff *skb,
 		      struct metadata_dst *tun_dst);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
+enum metadata_type {
+	METADATA_IP_TUNNEL,
+	METADATA_HW_PORT_MUX,
+};
+
 static inline struct metadata_dst *
 rpl_metadata_dst_alloc(u8 optslen, enum metadata_type type, gfp_t flags)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
 	return metadata_dst_alloc(optslen, flags);
-#else
-	return metadata_dst_alloc(optslen, type, flags);
-#endif
 }
+#else
+static inline struct metadata_dst *
+rpl_metadata_dst_alloc(u8 optslen, enum metadata_type type, gfp_t flags)
+{
+	return metadata_dst_alloc(optslen, type, flags);
+}
+#endif
+
 #define metadata_dst_alloc rpl_metadata_dst_alloc
 
 #endif /* __NET_DST_METADATA_WRAPPER_H */
