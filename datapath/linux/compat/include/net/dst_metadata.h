@@ -1,20 +1,21 @@
 #ifndef __NET_DST_METADATA_WRAPPER_H
 #define __NET_DST_METADATA_WRAPPER_H 1
 
-#ifdef USE_UPSTREAM_TUNNEL
-#include_next <net/dst_metadata.h>
-#else
-#include <linux/skbuff.h>
-
-#include <net/dsfield.h>
-#include <net/dst.h>
-#include <net/ipv6.h>
-#include <net/ip_tunnels.h>
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
 enum metadata_type {
 	METADATA_IP_TUNNEL,
 	METADATA_HW_PORT_MUX,
 };
+#endif
+
+#ifdef USE_UPSTREAM_TUNNEL
+#include_next <net/dst_metadata.h>
+#else
+#include <linux/skbuff.h>
+#include <net/dsfield.h>
+#include <net/dst.h>
+#include <net/ipv6.h>
+#include <net/ip_tunnels.h>
 
 struct hw_port_info {
 	struct net_device *lower_dev;
