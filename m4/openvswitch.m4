@@ -669,3 +669,9 @@ AC_DEFUN([OVS_CHECK_CXX],
      enable_cxx=false
    fi
    AM_CONDITIONAL([HAVE_CXX], [$enable_cxx])])
+
+AC_DEFUN([OVS_CHECK_NETINET6_IN6],
+  [AC_CHECK_HEADERS([netinet6/in6.h],
+  [
+    OVS_CFLAGS="$OVS_CFLAGS -D_NETINET6_IN6_H_=1"
+  ], [], [[#include <netinet/in.h>]])])
