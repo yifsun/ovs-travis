@@ -1,4 +1,4 @@
-#ifndef USE_UPSTREAM_TUNNEL
+#ifndef USE_UPSTREAM_ERSPAN
 #ifndef __LINUX_ERSPAN_H
 #define __LINUX_ERSPAN_H
 
