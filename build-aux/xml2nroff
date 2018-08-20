@@ -142,11 +142,6 @@ if __name__ == "__main__":
     except build.nroff.error.Error as e:
         sys.stderr.write("%s: %s\n" % (argv0, e.msg))
         sys.exit(1)
-    for line in s.splitlines():
-        line = line.strip()
-        if line:
-            print(line)
-
 
 # Local variables:
 # mode: python
