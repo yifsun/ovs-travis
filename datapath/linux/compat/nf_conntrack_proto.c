@@ -1,7 +1,10 @@
 #include <linux/types.h>
 
 #include <net/netfilter/nf_conntrack.h>
+
+#ifndef HAVE_IPV6_FRAG_H
 #include <net/netfilter/nf_conntrack_l3proto.h>
+#endif
 
 /*
  * Upstream net-next commmit 7e35ec0e8044
