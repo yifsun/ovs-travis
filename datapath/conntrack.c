@@ -48,12 +48,6 @@
 #define nf_nat_range2 nf_nat_range
 #endif
 
-#if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
-#ifdef HAVE_IPV6_FRAG_H
-#include <net/ipv6_frag.h>
-#endif
-#endif
-
 struct ovs_ct_len_tbl {
 	int maxlen;
 	int minlen;
@@ -550,11 +544,9 @@ static int handle_fragments(struct net *net, struct sw_flow_key *key,
 		enum ip_defrag_users user = IP_DEFRAG_CONNTRACK_IN + zone;
 
 		memset(IPCB(skb), 0, sizeof(struct inet_skb_parm));
-		if (ip_is_fragment(ip_hdr(skb))) {
-			err = ip_defrag(net, skb, user);
-			if (err)
-				return err;
-		}
+		err = ip_defrag(net, skb, user);
+		if (err)
+			return err;
 
 		ovs_cb.dp_cb.mru = IPCB(skb)->frag_max_size;
 #if IS_ENABLED(CONFIG_NF_DEFRAG_IPV6)
@@ -640,83 +632,6 @@ ovs_ct_get_info(const struct nf_conntrack_tuple_hash *h)
 	return IP_CT_NEW;
 }
 
-#ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
-static int ipv4_get_l4proto(const struct sk_buff *skb, unsigned int nhoff,
-                            u_int8_t *protonum)
-{
-        int dataoff = -1;
-        const struct iphdr *iph;
-        struct iphdr _iph;
-        
-        iph = skb_header_pointer(skb, nhoff, sizeof(_iph), &_iph);
-        if (!iph)
-                return -1;
-        
-        /* Conntrack defragments packets, we might still see fragments
-         * inside ICMP packets though.
-         */
-        if (iph->frag_off & htons(IP_OFFSET))
-                return -1;
-        
-        dataoff = nhoff + (iph->ihl << 2);
-        *protonum = iph->protocol;
-        
-        /* Check bogus IP headers */
-        if (dataoff > skb->len) {
-                pr_debug("bogus IPv4 packet: nhoff %u, ihl %u, skblen %u\n",
-                         nhoff, iph->ihl << 2, skb->len);
-                return -1;
-        }
-	return dataoff;
-}
-
-#if IS_ENABLED(CONFIG_IPV6)
-static int ipv6_get_l4proto(const struct sk_buff *skb, unsigned int nhoff,
-                            u8 *protonum)
-{
-        int protoff = -1;
-        unsigned int extoff = nhoff + sizeof(struct ipv6hdr);
-        __be16 frag_off;
-        u8 nexthdr;
-        
-        if (skb_copy_bits(skb, nhoff + offsetof(struct ipv6hdr, nexthdr),
-                          &nexthdr, sizeof(nexthdr)) != 0) {
-                pr_debug("can't get nexthdr\n");
-                return -1;
-        }
-        protoff = ipv6_skip_exthdr(skb, extoff, &nexthdr, &frag_off);
-        /* 
-         * (protoff == skb->len) means the packet has not data, just
-         * IPv6 and possibly extensions headers, but it is tracked anyway
-         */
-        if (protoff < 0 || (frag_off & htons(~0x7)) != 0) {
-                pr_debug("can't find proto in pkt\n");
-                return -1;
-        }       
-
-        *protonum = nexthdr;
-        return protoff;
-}
-#endif
-
-static int get_l4proto(const struct sk_buff *skb,
-                       unsigned int nhoff, u8 pf, u8 *l4num)
-{
-        switch (pf) {
-        case NFPROTO_IPV4:
-                return ipv4_get_l4proto(skb, nhoff, l4num);
-#if IS_ENABLED(CONFIG_IPV6)
-        case NFPROTO_IPV6:
-                return ipv6_get_l4proto(skb, nhoff, l4num);
-#endif
-        default:
-                *l4num = 0;
-                break;
-        }
-        return -1;
-}
-#endif /* HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO */
-
 /* Find an existing connection which this packet belongs to without
  * re-attributing statistics or modifying the connection state.  This allows an
  * skb->_nfct lost due to an upcall to be recovered during actions execution.
@@ -730,23 +645,13 @@ static struct nf_conn *
 ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 		     u8 l3num, struct sk_buff *skb, bool natted)
 {
+	const struct nf_conntrack_l3proto *l3proto;
 	const struct nf_conntrack_l4proto *l4proto;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conn *ct;
-	u8 protonum;
-	int protooff;
-
-	protooff = get_l4proto(skb, skb_network_offset(skb),
-			       l3num, &protonum);
-	if (protooff <= 0) {
-		pr_warn("ovs_ct_find_existing: Can't get protonum\n");
-		return NULL;
-	}
-
-#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
-	const struct nf_conntrack_l3proto *l3proto;
 	unsigned int dataoff;
+	u8 protonum;
 
 	l3proto = __nf_ct_l3proto_find(l3num);
 	if (l3proto->get_l4proto(skb, skb_network_offset(skb), &dataoff,
@@ -754,33 +659,18 @@ ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 		pr_debug("ovs_ct_find_existing: Can't get protonum\n");
 		return NULL;
 	}
-#endif
-
-#ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
 	l4proto = __nf_ct_l4proto_find(l3num, protonum);
-	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
-				       l3num, net, &tuple)) {
-		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
-		return NULL;
-	}
-#else
-	l4proto = __nf_ct_l4proto_find(protonum);
 	if (!nf_ct_get_tuple(skb, skb_network_offset(skb), dataoff, l3num,
 			     protonum, net, &tuple, l3proto, l4proto)) {
 		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
 		return NULL;
 	}
-#endif
 
 	/* Must invert the tuple if skb has been transformed by NAT. */
 	if (natted) {
 		struct nf_conntrack_tuple inverse;
 
-#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
 		if (!nf_ct_invert_tuple(&inverse, &tuple, l3proto, l4proto)) {
-#else
-		if (!nf_ct_invert_tuple(&inverse, &tuple, l4proto)) {
-#endif
 			pr_debug("ovs_ct_find_existing: Inversion failed!\n");
 			return NULL;
 		}
@@ -823,9 +713,6 @@ struct nf_conn *ovs_ct_executed(struct net *net,
 	*ct_executed = (key->ct_state & OVS_CS_F_TRACKED) &&
 		       !(key->ct_state & OVS_CS_F_INVALID) &&
 		       (key->ct_zone == info->zone.id);
-
-	pr_warn("%s ct_executed = %d afteror = %d\n", __func__,
-		*ct_executed, (!key->ct_state && info->force));
 
 	if (*ct_executed || (!key->ct_state && info->force)) {
 		ct = ovs_ct_find_existing(net, &info->zone, info->family, skb,
@@ -871,9 +758,8 @@ static bool skb_nfct_cached(struct net *net,
 		/* Delete the conntrack entry if confirmed, else just release
 		 * the reference.
 		 */
-		if (nf_ct_is_confirmed(ct)) {
+		if (nf_ct_is_confirmed(ct))
 			nf_ct_delete(ct, 0, 0);
-		}
 
 		nf_conntrack_put(&ct->ct_general);
 		nf_ct_set(skb, NULL, 0);
@@ -895,10 +781,8 @@ static int ovs_ct_nat_execute(struct sk_buff *skb, struct nf_conn *ct,
 {
 	int hooknum, nh_off, err = NF_ACCEPT;
 
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	nh_off = skb_network_offset(skb);
 	skb_pull_rcsum(skb, nh_off);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 
 	/* See HOOK2MANIP(). */
 	if (maniptype == NF_NAT_MANIP_SRC)
@@ -960,14 +844,10 @@ static int ovs_ct_nat_execute(struct sk_buff *skb, struct nf_conn *ct,
 		goto push;
 	}
 
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	err = nf_nat_packet(ct, ctinfo, hooknum, skb);
 push:
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	skb_push(skb, nh_off);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	skb_postpush_rcsum(skb, skb->data, nh_off);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 
 	return err;
 }
@@ -1107,16 +987,10 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 	struct nf_conn *ct;
 
 	if (!cached) {
-		struct nf_hook_state state = {
-                        .hook = NF_INET_PRE_ROUTING,
-                        .pf = info->family,
-                        .net = net,
-                };
 		struct nf_conn *tmpl = info->ct;
 		int err;
 
 		/* Associate skb with specified zone. */
-		printk("%s %d tmpl = %p\n", __func__, __LINE__, tmpl);
 		if (tmpl) {
 			if (skb_nfct(skb))
 				nf_conntrack_put(skb_nfct(skb));
@@ -1126,8 +1000,6 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 
 		err = nf_conntrack_in(net, info->family,
 				      NF_INET_PRE_ROUTING, skb);
-		printk("%s %d ct = %p\n", __func__, __LINE__, nf_ct_get(skb, &ctinfo));
-		printk("%s %d err = %d\n", __func__, __LINE__, err);
 		if (err != NF_ACCEPT)
 			return -ENOENT;
 
@@ -1142,7 +1014,6 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 	}
 
 	ct = nf_ct_get(skb, &ctinfo);
-	printk("%s %d ct = %p\n", __func__, __LINE__, ct);
 	if (ct) {
 		/* Packets starting a new connection must be NATted before the
 		 * helper, so that the helper knows about the NAT.  We enforce
@@ -1329,20 +1200,14 @@ static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
 	struct nf_conn *ct;
 	int err;
 
-	printk("%s skb = %p\n", __func__, skb);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	err = __ovs_ct_lookup(net, key, info, skb);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	if (err)
 		return err;
-
-	printk("%s %d\n", __func__, __LINE__);
 
 	/* The connection could be invalid, in which case this is a no-op.*/
 	ct = nf_ct_get(skb, &ctinfo);
 	if (!ct)
 		return 0;
-	printk("%s %d\n", __func__, __LINE__);
 
 #if	IS_ENABLED(CONFIG_NETFILTER_CONNCOUNT)
 	if (static_branch_unlikely(&ovs_ct_limit_enabled)) {
@@ -1359,7 +1224,6 @@ static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
 	}
 #endif
 
-	printk("%s %d\n", __func__, __LINE__);
 	/* Set the conntrack event mask if given.  NEW and DELETE events have
 	 * their own groups, but the NFNLGRP_CONNTRACK_UPDATE group listener
 	 * typically would receive many kinds of updates.  Setting the event
@@ -1374,7 +1238,6 @@ static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
 			cache->ctmask = info->eventmask;
 	}
 
-	printk("%s %d\n", __func__, __LINE__);
 	/* Apply changes before confirming the connection so that the initial
 	 * conntrack NEW netlink event carries the values given in the CT
 	 * action.
@@ -1382,33 +1245,25 @@ static int ovs_ct_commit(struct net *net, struct sw_flow_key *key,
 	if (info->mark.mask) {
 		err = ovs_ct_set_mark(ct, key, info->mark.value,
 				      info->mark.mask);
-		printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 		if (err)
 			return err;
 	}
-	printk("%s %d\n", __func__, __LINE__);
 	if (!nf_ct_is_confirmed(ct)) {
 		err = ovs_ct_init_labels(ct, key, &info->labels.value,
 					 &info->labels.mask);
-		printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 		if (err)
 			return err;
 	} else if (labels_nonzero(&info->labels.mask)) {
 		err = ovs_ct_set_labels(ct, key, &info->labels.value,
 					&info->labels.mask);
-		printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 		if (err)
 			return err;
 	}
-	printk("%s %d\n", __func__, __LINE__);
 	/* This will take care of sending queued events even if the connection
 	 * is already confirmed.
 	 */
-	if (nf_conntrack_confirm(skb) != NF_ACCEPT) {
-		printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
+	if (nf_conntrack_confirm(skb) != NF_ACCEPT)
 		return -EINVAL;
-	}
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 
 	return 0;
 }
@@ -1452,62 +1307,30 @@ int ovs_ct_execute(struct net *net, struct sk_buff *skb,
 {
 	int nh_ofs;
 	int err;
-	char buf[256];
-
-	printk("%s skb = %p\n", __func__, skb);
-
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 
 	/* The conntrack module expects to be working at L3. */
 	nh_ofs = skb_network_offset(skb);
-	memcpy(buf, skb->data, nh_ofs);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
-	printk("len = %d skb->len = %d skb->data_len = %d\n", nh_ofs, skb->len, skb->data_len);
 	skb_pull_rcsum(skb, nh_ofs);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 
 	err = ovs_skb_network_trim(skb);
-	printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 	if (err)
 		return err;
 
 	if (key->ip.frag != OVS_FRAG_TYPE_NONE) {
-		printk("before fragment skb->len = %d\n", skb->len);
 		err = handle_fragments(net, key, info->zone.id, skb);
-		printk("after  fragment skb->len = %d\n", skb->len);
-		printk("%s %d handle_fragments err = %d\n", __func__, __LINE__, err);
-		printk("%s %d handle_fragments EINPROGRESS = %d\n", __func__, __LINE__, EINPROGRESS);
-		printk("%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
 		if (err)
 			return err;
 	}
-
-	printk("%s info->ct->mark = %d\n", __func__, info->ct->mark);
-	printk("headroom %d nh_ofs %d\n", skb_headroom(skb), nh_ofs);
-	printk("%s %d commit? %d\n", __func__, __LINE__, info->commit);
 
 	if (info->commit)
 		err = ovs_ct_commit(net, key, info, skb);
 	else
 		err = ovs_ct_lookup(net, key, info, skb);
-	printk("ovs_ct_commit or ovs_ct_lookup returns %d\n", err);
-	if (err)
-		return err;
 
-	printk(KERN_EMERG"%s %d data head %p %p\n", __func__, __LINE__, skb->data, skb->head);
-	if (skb_headroom(skb) < nh_ofs) {
-		err = pskb_expand_head(skb, nh_ofs, 0, GFP_ATOMIC);
-		if (err)
-			return err;
-		printk("\tafter expand headroom %d nh_ofs %d\n", skb_headroom(skb), nh_ofs);
-	}
 	skb_push(skb, nh_ofs);
-	memcpy(skb->data, buf, nh_ofs);
 	skb_postpush_rcsum(skb, skb->data, nh_ofs);
-	// TODO double kfree_skb here and do_execute_actions
 	if (err)
 		kfree_skb(skb);
-	printk("%s %d\n", __func__, __LINE__);
 	return err;
 }
 
@@ -1539,11 +1362,7 @@ static int ovs_ct_add_helper(struct ovs_conntrack_info *info, const char *name,
 		return -EINVAL;
 	}
 
-#ifdef HAVE_NF_CT_HELPER_EXT_ADD_TAKES_HELPER
 	help = nf_ct_helper_ext_add(info->ct, helper, GFP_KERNEL);
-#else
-	help = nf_ct_helper_ext_add(info->ct, GFP_KERNEL);
-#endif
 	if (!help) {
 		nf_conntrack_helper_put(helper);
 		return -ENOMEM;
@@ -1554,6 +1373,7 @@ static int ovs_ct_add_helper(struct ovs_conntrack_info *info, const char *name,
 
 	if (info->nat)
 		request_module("ip_nat_%s", name);
+
 	return 0;
 }
 
