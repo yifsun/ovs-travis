@@ -537,6 +537,26 @@ out:
 	return err;
 }
 
+void my_print_hex_dump(const void *buf, size_t len)
+{
+        static int rowsize = 16;
+        static int groupsize = 1;
+        const u8 *ptr = buf;
+        int i, linelen, remaining = len;
+        unsigned char linebuf[32 * 3 + 2 + 32 + 1];
+
+        if (rowsize != 16 && rowsize != 32)
+                rowsize = 16;
+
+        for (i = 0; i < len; i += rowsize) {
+                linelen = min(remaining, rowsize);
+                remaining -= rowsize;
+                hex_dump_to_buffer(ptr + i, linelen, rowsize, groupsize,
+                                   linebuf, sizeof(linebuf), true);
+                printk("%.8x: %s\n", i, linebuf);
+        }
+}
+
 static int ovs_packet_cmd_execute(struct sk_buff *skb, struct genl_info *info)
 {
 	struct ovs_header *ovs_header = info->userhdr;
@@ -560,12 +580,16 @@ static int ovs_packet_cmd_execute(struct sk_buff *skb, struct genl_info *info)
 
 	len = nla_len(a[OVS_PACKET_ATTR_PACKET]);
 	packet = __dev_alloc_skb(NET_IP_ALIGN + len, GFP_KERNEL);
+	printk("%s %p=>%p len = %d\n", __func__, skb, packet, len);
 	err = -ENOMEM;
 	if (!packet)
 		goto err;
+	printk("%s %d data head %p %p\n", __func__, __LINE__, packet->data, packet->head);
 	skb_reserve(packet, NET_IP_ALIGN);
+	printk("%s %d data head %p %p\n", __func__, __LINE__, packet->data, packet->head);
 
 	nla_memcpy(__skb_put(packet, len), a[OVS_PACKET_ATTR_PACKET], len);
+	my_print_hex_dump(nla_data(a[OVS_PACKET_ATTR_PACKET]), len);
 
 	/* Set packet's mru */
 	if (a[OVS_PACKET_ATTR_MRU]) {
