@@ -4,8 +4,6 @@
 #include <linux/list.h>
 
 #ifdef HAVE_UPSTREAM_NF_CONNCOUNT
-#include <net/netfilter/nf_conntrack_tuple.h>
-#include <net/netfilter/nf_conntrack_zones.h>
 #include_next <net/netfilter/nf_conntrack_count.h>
 
 static inline int rpl_nf_conncount_modinit(void)

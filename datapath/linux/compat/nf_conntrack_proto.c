@@ -1,10 +1,7 @@
 #include <linux/types.h>
 
 #include <net/netfilter/nf_conntrack.h>
-
-#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
 #include <net/netfilter/nf_conntrack_l3proto.h>
-#endif
 
 /*
  * Upstream net-next commmit 7e35ec0e8044
