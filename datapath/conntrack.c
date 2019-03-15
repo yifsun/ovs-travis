@@ -640,9 +640,7 @@ ovs_ct_get_info(const struct nf_conntrack_tuple_hash *h)
 	return IP_CT_NEW;
 }
 
-//#ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
-#ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
-#else
+#ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
 static int ipv4_get_l4proto(const struct sk_buff *skb, unsigned int nhoff,
                             u_int8_t *protonum)
 {
@@ -737,7 +735,15 @@ ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conn *ct;
 	u8 protonum;
-	
+	int protooff;
+
+	protooff = get_l4proto(skb, skb_network_offset(skb),
+			       l3num, &protonum);
+	if (protooff <= 0) {
+		pr_warn("ovs_ct_find_existing: Can't get protonum\n");
+		return NULL;
+	}
+
 #ifdef HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO
 	const struct nf_conntrack_l3proto *l3proto;
 	unsigned int dataoff;
@@ -748,37 +754,24 @@ ovs_ct_find_existing(struct net *net, const struct nf_conntrack_zone *zone,
 		pr_debug("ovs_ct_find_existing: Can't get protonum\n");
 		return NULL;
 	}
-#else
-	int protooff;
-
-	protooff = get_l4proto(skb, skb_network_offset(skb),
-			       l3num, &protonum);
-	if (protooff <= 0) {
-		pr_warn("ovs_ct_find_existing: Can't get protonum\n");
-		return NULL;
-	}
 #endif
 
 #ifdef HAVE_NF_CT_L4PROTO_FIND_TAKES_L3PROTO
 	l4proto = __nf_ct_l4proto_find(l3num, protonum);
+	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
+				       l3num, net, &tuple)) {
+		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
+		return NULL;
+	}
 #else
 	l4proto = __nf_ct_l4proto_find(protonum);
+	if (!nf_ct_get_tuple(skb, skb_network_offset(skb), dataoff, l3num,
+			     protonum, net, &tuple, l3proto, l4proto)) {
+		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
+		return NULL;
+	}
 #endif
 
-#ifdef HAVE_NF_CT_GET_TUPLE
-	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
-				       l3num, net, &tuple)) {
-		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
-		return NULL;
-	}
-#else
-	if (!nf_ct_get_tuplepr(skb, skb_network_offset(skb),
-				       l3num, net, &tuple)) {
-		pr_debug("ovs_ct_find_existing: Can't get tuple\n");
-		return NULL;
-	}
-#endif
-	
 	/* Must invert the tuple if skb has been transformed by NAT. */
 	if (natted) {
 		struct nf_conntrack_tuple inverse;
@@ -1126,17 +1119,8 @@ static int __ovs_ct_lookup(struct net *net, struct sw_flow_key *key,
 			nf_ct_set(skb, tmpl, IP_CT_NEW);
 		}
 
-#ifdef HAVE_NF_CONNTRACK_IN_TAKES_NET
 		err = nf_conntrack_in(net, info->family,
 				      NF_INET_PRE_ROUTING, skb);
-#else
-		struct nf_hook_state state = {
-			.hook = NF_INET_PRE_ROUTING,
-			.pf = info->family,
-			.net = net,
-		};
-		err = nf_conntrack_in(skb, &state);
-#endif
 		printk("%s %d ct = %p\n", __func__, __LINE__, nf_ct_get(skb, &ctinfo));
 		printk("%s %d err = %d\n", __func__, __LINE__, err);
 		if (err != NF_ACCEPT)

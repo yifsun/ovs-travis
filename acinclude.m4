@@ -589,11 +589,6 @@ AC_DEFUN([OVS_CHECK_LINUX_COMPAT], [
   OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h],
                         [nf_ct_invert_tuple], [l3proto],
                         [OVS_DEFINE([HAVE_NF_CT_INVERT_TUPLE_TAKES_L3PROTO])])
-  OVS_GREP_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h], [nf_ct_get_tuple],
-                  [OVS_DEFINE([HAVE_NF_CT_GET_TUPLE])])
-  OVS_FIND_PARAM_IFELSE([$KSRC/include/net/netfilter/nf_conntrack_core.h],
-                        [nf_conntrack_in], [net],
-                        [OVS_DEFINE([HAVE_NF_CONNTRACK_IN_TAKES_NET])])
 
   dnl Check for dst_cache and ipv6 lable to use backported tunnel infrastructure.
   dnl OVS does not really need ipv6 label field, but its presence signifies that
