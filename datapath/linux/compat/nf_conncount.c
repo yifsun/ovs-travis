@@ -13,6 +13,8 @@
  *		only ignore TIME_WAIT or gone connections
  *   (C) CC Computer Consultants GmbH, 2007
  */
+#ifndef HAVE_UPSTREAM_NF_CONNCOUNT
+
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/in.h>
 #include <linux/in6.h>
@@ -635,3 +637,5 @@ void rpl_nf_conncount_modexit(void)
 	kmem_cache_destroy(conncount_conn_cachep);
 	kmem_cache_destroy(conncount_rb_cachep);
 }
+
+#endif /* HAVE_UPSTREAM_NF_CONNCOUNT */
