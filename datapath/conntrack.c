@@ -1228,6 +1228,8 @@ static int ovs_ct_check_limit(struct net *net,
 
 	connections = nf_conncount_count(net, ct_limit_info->data,
 					 &conncount_key, tuple, &info->zone);
+	printk("%s connections = %d per_zone_limit = %d\n",
+		__func__, connections, per_zone_limit);
 	if (connections > per_zone_limit)
 		return -ENOMEM;
 
@@ -1450,6 +1452,20 @@ static int parse_nat(const struct nlattr *attr,
 	bool have_ip_max = false;
 	bool have_proto_max = false;
 	bool ip_vers = (info->family == NFPROTO_IPV6);
+
+#ifndef CONFIG_NF_NAT_IPV4
+	if (info->family == NFPROTO_IPV4) {
+		OVS_NLERR(log, "Flow action ct(nat) not supported without nf_nat_ipv4");
+		return -ENOTSUPP;
+	}
+#endif
+
+#ifndef CONFIG_NF_NAT_IPV6
+	if (info->family == NFPROTO_IPV6) {
+		OVS_NLERR(log, "Flow action ct(nat) not supported without nf_nat_ipv6");
+                return -ENOTSUPP;
+        }
+#endif
 
 	nla_for_each_nested(a, attr, rem) {
 		static const int ovs_nat_attr_lens[OVS_NAT_ATTR_MAX + 1][2] = {
@@ -2017,6 +2033,8 @@ static int ovs_ct_limit_set_zone_limit(struct nlattr *nla_zone_limit,
 
 			ct_limit->zone = zone;
 			ct_limit->limit = zone_limit->limit;
+
+			printk("%s set limit to %d\n", __func__, ct_limit->limit);
 
 			ovs_lock();
 			ct_limit_set(info, ct_limit);
