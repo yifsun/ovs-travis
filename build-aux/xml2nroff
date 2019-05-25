@@ -144,8 +144,6 @@ if __name__ == "__main__":
         sys.exit(1)
     for line in s.splitlines():
         line = line.strip()
-        if line:
-            print(line)
 
 
 # Local variables:
