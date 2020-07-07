@@ -1399,3 +1399,15 @@ AC_DEFUN([OVS_CHECK_LINUX_HOST],
         [ovs_cv_linux=true],
         [ovs_cv_linux=false])])
    AM_CONDITIONAL([LINUX], [$ovs_cv_linux])])
+
+dnl OVS_CHECK_LINUX_VIRTIO_TYPES
+dnl
+dnl Check existence of linux/virtio_types.h.
+AC_DEFUN([OVS_CHECK_LINUX_VIRTIO_TYPES], [
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([#include <linux/virtio_types.h>], [
+        __virtio16 x;
+    ])],
+    [AC_DEFINE([HAVE_VIRTIO_TYPES], [1],
+    [Define to 1 if virtio_types.h is available.])])
+])
